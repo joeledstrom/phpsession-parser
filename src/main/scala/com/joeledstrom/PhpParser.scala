@@ -4,21 +4,14 @@ import java.text.ParseException
 
 import scala.annotation.tailrec
 import scala.util.Try
+import scala.util.parsing.combinator.RegexParsers
 import scala.util.parsing.input.CharSequenceReader
 
 /**
   * Created by joel on 04/11/15.
   */
-trait PhpValue
 
-case class PhpObject(name: String, contents: PhpArray) extends PhpValue
-case class PhpArray(values: Seq[(PhpValue, PhpValue)]) extends PhpValue
-case class PhpString(value: String) extends PhpValue
-case class PhpInt(value: Long) extends PhpValue
-
-object PhpParser extends scala.util.parsing.combinator.RegexParsers {
-
-
+object PhpParser extends RegexParsers {
 
   def stringParser: Parser[String] = new Parser[String] {
 
@@ -33,7 +26,6 @@ object PhpParser extends scala.util.parsing.combinator.RegexParsers {
         readLength(reader.rest, buffer + reader.first)
       }
     }
-
 
     def readString(in: Input)(byteLength: Long): Option[(Input, String)] = {
 
@@ -80,36 +72,38 @@ object PhpParser extends scala.util.parsing.combinator.RegexParsers {
     }
   }
 
-
-
-
   def intParser: Parser[Long] = "[0-9]*".r ^? (
     { case s if Try(s.toLong).isSuccess => s.toLong },
     { _ => "Error parsing integer" }
   )
 
-  def int: Parser[PhpValue] = "i:" ~ intParser ~ ";" ^^ { case _ ~ i ~ _ => PhpInt(i)}
+  def intValue = "i:" ~> intParser <~ ";"
 
-  def string = "s:" ~> stringParser <~ ";" ^^ (x => PhpString(x))
+  def stringValue = "s:" ~> stringParser <~ ";"
 
+  def boolValue = "b:" ~> intParser <~ ";" ^? (
+    { case b if b == 0 || b == 1 => if (b == 0) false else true },
+    { _ => "Error parsing boolean" }
+  )
 
+  def arrayParser: Parser[Map[Any, Any]] = intParser ~ ":{" ~ rep((stringValue | intValue) ~ anyValue) ~ "}" ^^
+    { case (i ~ _ ~ contents ~ _) if i == contents.size => {
+      (contents map { case (k ~ v) => (k, v) }).toMap
+    }}
 
-  def array: Parser[PhpValue] = "a:" ~ arrayPart ^^ { case _ ~ a => a}
+  def arrayValue = "a:" ~> arrayParser
 
-  def arrayPart: Parser[PhpValue] = intParser ~ ":{" ~ (((string | int) ~ anyValue)*) ~ "}" ^^
-    { case (i ~ _ ~ contents ~ _) => PhpArray(contents.map { case (k ~ v) => (k, v) })}
+  def objValue = "O:" ~> stringParser ~ ":" ~ arrayParser ^^
+    { case (name ~ _ ~ array) => (name, array) }
 
-  def obj: Parser[PhpValue] = "O:" ~> stringParser ~ ":" ~ arrayPart ^^
-    { case (name ~ _ ~ PhpArray(v)) => PhpObject(name, PhpArray(v)) }
-
-  val anyValue: Parser[PhpValue] = array | obj | string | int
+  val anyValue: Parser[Any] = arrayValue | objValue | stringValue | intValue | boolValue
 
   def sessionName: Parser[String] = """[^\|]+\|""".r ^^ { case n => n.dropRight(1) }
 
-  def session: Parser[PhpObject] = sessionName ~ anyValue ^^
-    { case name ~ PhpArray(c) => PhpObject(name, PhpArray(c))}
+  def session = sessionName ~ arrayValue ^^
+    { case name ~ array => (name, array)}
 
-  def sessions = (session*)
+  def sessions = rep(session) ^^ { _.toMap }
 
 
 
@@ -119,8 +113,8 @@ object PhpParser extends scala.util.parsing.combinator.RegexParsers {
     val phraseParser = phrase(parser)
     val input = new CharSequenceReader(s)
     phraseParser(input) match {
-      case Success(t,_)     => scala.util.Success[T](t)
-      case NoSuccess(msg, input) => scala.util.Failure(new ParseException(msg, input.offset))
+      case Success(t, _)          => scala.util.Success[T](t)
+      case NoSuccess(msg, input)  => scala.util.Failure(new ParseException(msg, input.offset))
     }
   }
 }

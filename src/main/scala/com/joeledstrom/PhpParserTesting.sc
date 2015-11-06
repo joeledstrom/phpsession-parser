@@ -8,4 +8,4 @@ val s = """a:1:{s:5:"Us"er";a:5:{s:2:"id";i:1;s:8:"username";s:18:"𠼮𡁯𩶘@
 
 println(PhpParser.parseSerialized(s))
 println(PhpParser.parseSession(data))
-println(PhpParser.parseSerialized("i:1004534534589898;"))
+println(PhpParser.parseSerialized("""a:3:{i:0;s:2:"a"";i:1;i:2;i:2;i:3;}"""))
