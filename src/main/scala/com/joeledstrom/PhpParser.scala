@@ -31,12 +31,12 @@ object PhpParser extends RegexParsers {
 
       if (in.first != '"') return None
 
-      val b = new StringBuilder
+      var b = Seq.empty[Char]
       var byteCount = 0
       var reader = in.rest
 
       while (byteCount < byteLength) {
-        val c = reader.first
+        var c = reader.first
 
         if (c == CharSequenceReader.EofCh) return None
 
@@ -46,19 +46,23 @@ object PhpParser extends RegexParsers {
           byteCount += 2
         } else if (c.isHighSurrogate) {
           byteCount += 4
+          b = b :+ c
           reader = reader.rest
+          c = reader.first
         } else {
           byteCount += 3
         }
 
-        b.append(c)
+        b = b :+ c
         reader = reader.rest
       }
 
-      if (reader.first == '"' && byteCount == byteLength)
-        Some(reader.rest, b.toString())
-      else
+      if (reader.first == '"' && byteCount == byteLength) {
+
+        Some(reader.rest, new String(b.toArray))
+      } else {
         None
+      }
     }
 
     override def apply(in: PhpParser.Input): PhpParser.ParseResult[String] = {
@@ -96,7 +100,7 @@ object PhpParser extends RegexParsers {
   def objValue = "O:" ~> stringParser ~ ":" ~ arrayParser ^^
     { case (name ~ _ ~ array) => (name, array) }
 
-  val anyValue: Parser[Any] = arrayValue | objValue | stringValue | intValue | boolValue
+  def anyValue: Parser[Any] = arrayValue | objValue | stringValue | intValue | boolValue
 
   def sessionName: Parser[String] = """[^\|]+\|""".r ^^ { case n => n.dropRight(1) }
 
